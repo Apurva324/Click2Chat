@@ -327,6 +327,26 @@ def query(req: QueryRequest):
         "debug_rewritten_query": llm_question
     }
 
+# new starts 
+@app.get("/evaluations")
+def get_evaluations():
+    db = EvalSession()
+    data = db.query(Evaluation).all()
+
+    result = []
+    for row in data:
+        result.append({
+            "id": row.id,
+            "question": row.question,
+            "answer": row.answer,
+            "faithfulness": row.faithfulness,
+            "answer_relevancy": row.answer_relevancy,
+            "latency": row.latency
+        })
+
+    db.close()
+    return result
+# new ends
 
 @app.get("/summary/{video_id}")
 def summarize(video_id: str):

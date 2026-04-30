@@ -4,6 +4,7 @@ import sqlite3
 import plotly.express as px
 import os
 import time
+import requests
 
 st.set_page_config(page_title="RAG Dashboard", layout="wide")
 
@@ -17,9 +18,17 @@ DB_PATH = os.path.join(BASE_DIR, "Backend", "rag_dashboard.db")
 st.caption(f"Auto-refreshing every 5 seconds • DB: {DB_PATH}")
 
 # Connect DB
-conn = sqlite3.connect(DB_PATH)
-df = pd.read_sql_query("SELECT * FROM evaluations ORDER BY id DESC", conn)
-conn.close()
+# new starts
+API_URL = "http://127.0.0.1:8000/evaluations"  # change later to Railway URL
+
+response = requests.get(API_URL)
+
+if response.status_code == 200:
+    df = pd.DataFrame(response.json())
+else:
+    st.error("Failed to fetch data from API")
+    df = pd.DataFrame()
+# new ends
 
 if df.empty:
     st.warning("No data found.")
