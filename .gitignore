@@ -4,3 +4,4 @@ __pycache__/
 .env
 faiss_stores/
 *.db
+.DS_Store
