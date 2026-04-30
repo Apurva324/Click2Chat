@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+youtube-transcript-api
+langchain
+langchain-text-splitters
+langchain-core
+langchain-community
+langchain-groq
+langchain-huggingface
+sentence-transformers
+faiss-cpu
+rank-bm25
+langchain-classic
+python-dotenv
+sqlalchemy
+psycopg2-binary
+ragas
