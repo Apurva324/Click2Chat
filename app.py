@@ -29,6 +29,7 @@ from models import Base
 load_dotenv()
 app = FastAPI()
 
+
 Base.metadata.create_all(bind=engine)
 EvalBase.metadata.create_all(bind=eval_engine)
 
@@ -216,7 +217,12 @@ def ingest(req: IngestRequest):
 
     return {"status": "ingested", "chunks": len(chunks)}
 
-
+# new starts 
+# ✅ ADD IT HERE (right after app creation or near other routes)
+@app.get("/")
+def home():
+    return {"status": "API is running"}
+# new ends
 @app.post("/query")
 def query(req: QueryRequest):
     start_time = time.time()
