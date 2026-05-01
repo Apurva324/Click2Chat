@@ -35,7 +35,7 @@ EvalBase.metadata.create_all(bind=eval_engine)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://www.youtube.com", "https://youtube.com", "chrome-extension://*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
