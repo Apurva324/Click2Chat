@@ -5,7 +5,7 @@ import os
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set. Add it in Railway → Variables.")
+    raise RuntimeError("${{PostgreSQL.DATABASE_URL}}")
 
 # Railway sometimes provides postgres:// but SQLAlchemy needs postgresql://
 if DATABASE_URL.startswith("postgres://"):
