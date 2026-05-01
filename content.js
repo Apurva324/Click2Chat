@@ -1,5 +1,20 @@
 let currentVideoId = null;
 
+
+function getSessionId() {
+  let id = localStorage.getItem("rag_session_id");
+  if (!id) {
+    id = "user_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
+    localStorage.setItem("rag_session_id", id);
+  }
+  return id;
+}
+
+const SESSION_ID = getSessionId();
+
+
+const API_BASE = "https://click2chat-production.up.railway.app";
+
 function getVideoId() {
   return new URLSearchParams(window.location.search).get("v");
 }
@@ -56,7 +71,7 @@ async function ingestVideo(videoId) {
   status.textContent = "Fetching transcript...";
 
   try {
-    const res = await fetch("http://localhost:8000/ingest", {
+    const res = await fetch(`${API_BASE}/ingest`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ video_id: videoId }),
@@ -65,9 +80,9 @@ async function ingestVideo(videoId) {
     const data = await res.json();
 
     if (data.status === "ingested") {
-      status.textContent = `✅ Ready! (${data.chunks} chunks loaded)`;
+      status.textContent = `Ready! (${data.chunks} chunks loaded)`;
     } else if (data.status === "already_ingested" || data.status === "loaded_from_disk") {
-      status.textContent = "✅ Ready! (loaded from cache)";
+      status.textContent = "Ready! (loaded from cache)";
     }
 
     // Enable input
@@ -76,7 +91,7 @@ async function ingestVideo(videoId) {
     document.getElementById("rag-input").focus();
 
   } catch (err) {
-    status.textContent = "❌ Server not running. Start FastAPI first.";
+    status.textContent = "Could not reach server. Check Railway deployment.";
   }
 }
 
@@ -102,15 +117,15 @@ async function sendQuestion() {
   chat.scrollTop = chat.scrollHeight;
 
   try {
-  const res = await fetch("http://localhost:8000/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      video_id: currentVideoId,
-      question: question,
-      session_id: "youtube_user_1"
-    }),
-  });
+    const res = await fetch(`${API_BASE}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        video_id: currentVideoId,
+        question: question,
+        session_id: SESSION_ID  
+      }),
+    });
 
     const data = await res.json();
     loadingDiv.remove();
@@ -132,7 +147,7 @@ async function sendQuestion() {
 
   } catch (err) {
     loadingDiv.remove();
-    chat.innerHTML += `<div class="bot-msg" style="color:#ff6b6b;">Error — is the FastAPI server running?</div>`;
+    chat.innerHTML += `<div class="bot-msg" style="color:#ff6b6b;">Error — could not reach server.</div>`;
   }
 
   input.disabled = false;
