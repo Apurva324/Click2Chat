@@ -28,14 +28,14 @@ async function fetchTranscript(videoId) {
 
 const entries = [];
 const regex = /<text start="([^"]+)"[^>]*>([\s\S]*?)<\/text>/g;
-let match;
-while ((match = regex.exec(xmlText)) !== null) {
+let m;
+while ((m = regex.exec(xmlText)) !== null) {
   entries.push({
-    start: parseFloat(match[1]),
-    text: match[2]
+    start: parseFloat(m[1]),
+    text: m[2]
       .replace(/&#39;/g, "'").replace(/&amp;/g, "&")
       .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-      .replace(/<[^>]*>/g, "") // strip any inline tags
+      .replace(/<[^>]*>/g, "")
   });
 }
 return entries;
