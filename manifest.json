@@ -6,8 +6,13 @@
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "https://www.youtube.com/*",
+    "https://*.youtube.com/*",
+    "https://*.googlevideo.com/*",
     "https://click2chat-production.up.railway.app/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/watch*"],

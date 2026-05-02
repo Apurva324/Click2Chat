@@ -25,42 +25,19 @@ function formatTime(seconds) {
 
 
 async function fetchTranscript(videoId) {
-  try {
-    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
-    const pageHtml = await pageRes.text();
-
-    const match = pageHtml.match(/"captionTracks":(\[.*?\])/);
-    if (!match) return null;
-
-    const tracks = JSON.parse(match[1]);
-    const track = tracks.find(t => t.languageCode === "en") ||
-                  tracks.find(t => t.languageCode?.startsWith("en")) ||
-                  tracks[0];
-
-    if (!track?.baseUrl) return null;
-
-    const xmlRes = await fetch(track.baseUrl);
-    const xmlText = await xmlRes.text();
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlText, "text/xml");
-    const texts = doc.querySelectorAll("text");
-
-    const transcript = Array.from(texts).map(el => ({
-      text: el.textContent
-        .replace(/&#39;/g, "'")
-        .replace(/&amp;/g, "&")
-        .replace(/&quot;/g, '"')
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">"),
-      start: parseFloat(el.getAttribute("start") || "0")
-    }));
-
-    return transcript;
-  } catch (err) {
-    console.error("[RAG] Transcript fetch failed:", err);
-    return null;
-  }
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: "FETCH_TRANSCRIPT", videoId },
+      (response) => {
+        if (response?.success) {
+          resolve(response.transcript);
+        } else {
+          console.error("[RAG] Background transcript fetch failed:", response?.error);
+          resolve(null);
+        }
+      }
+    );
+  });
 }
 
 function buildSidebar() {
