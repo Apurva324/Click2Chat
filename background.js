@@ -24,14 +24,19 @@ async function fetchTranscript(videoId) {
   const xmlRes = await fetch(track.baseUrl);
   const xmlText = await xmlRes.text();
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, "text/xml");
-  const texts = doc.querySelectorAll("text");
 
-  return Array.from(texts).map(el => ({
-    text: el.textContent
+
+const entries = [];
+const regex = /<text start="([^"]+)"[^>]*>([\s\S]*?)<\/text>/g;
+let match;
+while ((match = regex.exec(xmlText)) !== null) {
+  entries.push({
+    start: parseFloat(match[1]),
+    text: match[2]
       .replace(/&#39;/g, "'").replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
-    start: parseFloat(el.getAttribute("start") || "0")
-  }));
+      .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/<[^>]*>/g, "") // strip any inline tags
+  });
+}
+return entries;
 }
