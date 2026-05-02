@@ -11,8 +11,6 @@ function getSessionId() {
 }
 
 const SESSION_ID = getSessionId();
-
-
 const API_BASE = "https://click2chat-production.up.railway.app";
 
 function getVideoId() {
@@ -25,19 +23,56 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+
+async function fetchTranscript(videoId) {
+  try {
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
+    const pageHtml = await pageRes.text();
+
+    const match = pageHtml.match(/"captionTracks":(\[.*?\])/);
+    if (!match) return null;
+
+    const tracks = JSON.parse(match[1]);
+    const track = tracks.find(t => t.languageCode === "en") ||
+                  tracks.find(t => t.languageCode?.startsWith("en")) ||
+                  tracks[0];
+
+    if (!track?.baseUrl) return null;
+
+    const xmlRes = await fetch(track.baseUrl);
+    const xmlText = await xmlRes.text();
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, "text/xml");
+    const texts = doc.querySelectorAll("text");
+
+    const transcript = Array.from(texts).map(el => ({
+      text: el.textContent
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">"),
+      start: parseFloat(el.getAttribute("start") || "0")
+    }));
+
+    return transcript;
+  } catch (err) {
+    console.error("[RAG] Transcript fetch failed:", err);
+    return null;
+  }
+}
+
 function buildSidebar() {
-  // Remove existing sidebar if any
   document.getElementById("rag-sidebar")?.remove();
   document.getElementById("rag-toggle-btn")?.remove();
 
-  // Toggle button (always visible)
   const toggleBtn = document.createElement("button");
   toggleBtn.id = "rag-toggle-btn";
   toggleBtn.textContent = "🤖";
   toggleBtn.title = "Toggle RAG Assistant";
   document.body.appendChild(toggleBtn);
 
-  // Sidebar
   const sidebar = document.createElement("div");
   sidebar.id = "rag-sidebar";
   sidebar.innerHTML = `
@@ -54,15 +89,11 @@ function buildSidebar() {
   `;
   document.body.appendChild(sidebar);
 
-  // Toggle show/hide
   toggleBtn.onclick = () => sidebar.classList.toggle("hidden");
   document.getElementById("rag-close").onclick = () => sidebar.classList.add("hidden");
-
-  // Send on Enter key
   document.getElementById("rag-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendQuestion();
   });
-
   document.getElementById("rag-send").onclick = sendQuestion;
 }
 
@@ -70,11 +101,20 @@ async function ingestVideo(videoId) {
   const status = document.getElementById("rag-status");
   status.textContent = "Fetching transcript...";
 
+  
+  const transcript = await fetchTranscript(videoId);
+  if (!transcript || transcript.length === 0) {
+    status.textContent = "No transcript available for this video.";
+    return;
+  }
+
+  status.textContent = "Processing transcript...";
+
   try {
     const res = await fetch(`${API_BASE}/ingest`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ video_id: videoId }),
+      body: JSON.stringify({ video_id: videoId, transcript }),
     });
 
     const data = await res.json();
@@ -85,13 +125,13 @@ async function ingestVideo(videoId) {
       status.textContent = "Ready! (loaded from cache)";
     }
 
-    // Enable input
     document.getElementById("rag-input").disabled = false;
     document.getElementById("rag-send").disabled = false;
     document.getElementById("rag-input").focus();
 
   } catch (err) {
     status.textContent = "Could not reach server. Check Railway deployment.";
+    console.error("[RAG] Ingest error:", err);
   }
 }
 
@@ -103,13 +143,11 @@ async function sendQuestion() {
 
   if (!question) return;
 
-  // Show user message
   chat.innerHTML += `<div class="user-msg">${question}</div>`;
   input.value = "";
   input.disabled = true;
   sendBtn.disabled = true;
 
-  // Show loading dots
   const loadingDiv = document.createElement("div");
   loadingDiv.className = "loading-dots";
   loadingDiv.innerHTML = "<span></span><span></span><span></span>";
@@ -123,14 +161,13 @@ async function sendQuestion() {
       body: JSON.stringify({
         video_id: currentVideoId,
         question: question,
-        session_id: SESSION_ID  
+        session_id: SESSION_ID
       }),
     });
 
     const data = await res.json();
     loadingDiv.remove();
 
-    // Build timestamp links
     let timestampHTML = "";
     if (data.timestamps && data.timestamps.length > 0) {
       const links = data.timestamps
@@ -156,7 +193,6 @@ async function sendQuestion() {
   chat.scrollTop = chat.scrollHeight;
 }
 
-// Watch for YouTube SPA navigation (video changes without page reload)
 function watchForVideoChange() {
   const observer = new MutationObserver(() => {
     const newVideoId = getVideoId();

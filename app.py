@@ -2,10 +2,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings          # ← replaced OllamaEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
@@ -30,10 +29,10 @@ from models import Base
 load_dotenv()
 app = FastAPI()
 
-
 Base.metadata.create_all(bind=engine)
 EvalBase.metadata.create_all(bind=eval_engine)
 
+# ✅ Manual CORS middleware — handles preflight OPTIONS requests
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -51,7 +50,6 @@ async def add_cors_headers(request: Request, call_next):
 
 CHUNK_VERSION = "v3"
 
-# ← HuggingFace embeddings: same model as all-minilm, runs in-process, no Ollama needed
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 llm = ChatGroq(
@@ -144,8 +142,10 @@ bm25_retrievers: dict = {}
 all_chunks: dict = {}
 
 
+# ✅ Updated: accepts transcript from extension (avoids YouTube IP blocking)
 class IngestRequest(BaseModel):
     video_id: str
+    transcript: list | None = None  # list of {text, start} objects from extension
 
 class QueryRequest(BaseModel):
     video_id: str
@@ -160,13 +160,13 @@ def build_chunks_from_transcript(transcript_list):
         separators=["\n\n", "\n", ". ", " ", ""]
     )
 
-    raw_entries = [(entry.text.strip(), entry.start) for entry in transcript_list]
-
     merged_docs = []
     buffer_text = ""
     buffer_start = 0.0
 
-    for text, start in raw_entries:
+    for entry in transcript_list:
+        text = entry["text"].strip()
+        start = entry["start"]
         if not buffer_text:
             buffer_start = start
         buffer_text += " " + text
@@ -188,6 +188,11 @@ def build_chunks_from_transcript(transcript_list):
     return chunks
 
 
+@app.get("/")
+def home():
+    return {"status": "API is running"}
+
+
 @app.post("/ingest")
 def ingest(req: IngestRequest):
     if req.video_id in vector_stores:
@@ -197,23 +202,17 @@ def ingest(req: IngestRequest):
     if os.path.exists(save_path):
         vs = FAISS.load_local(save_path, embeddings, allow_dangerous_deserialization=True)
         vector_stores[req.video_id] = vs
-        try:
-            ytt_api = YouTubeTranscriptApi()
-            transcript_list = ytt_api.fetch(req.video_id, languages=["en"])
-            chunks = build_chunks_from_transcript(transcript_list)
+        if req.transcript:
+            chunks = build_chunks_from_transcript(req.transcript)
             all_chunks[req.video_id] = chunks
             bm25_retrievers[req.video_id] = BM25Retriever.from_documents(chunks, k=8)
-        except Exception:
-            pass
         return {"status": "loaded_from_disk"}
 
-    try:
-        ytt_api = YouTubeTranscriptApi()
-        transcript_list = ytt_api.fetch(req.video_id, languages=["en"])
-    except TranscriptsDisabled:
-        raise HTTPException(status_code=400, detail="Transcript disabled for this video")
+    # ✅ Use transcript sent from extension
+    if not req.transcript:
+        raise HTTPException(status_code=400, detail="No transcript provided. Extension must send transcript.")
 
-    chunks = build_chunks_from_transcript(transcript_list)
+    chunks = build_chunks_from_transcript(req.transcript)
 
     vector_store = FAISS.from_documents(chunks, embeddings)
     os.makedirs("faiss_stores", exist_ok=True)
@@ -225,12 +224,7 @@ def ingest(req: IngestRequest):
 
     return {"status": "ingested", "chunks": len(chunks)}
 
-# new starts 
-# ✅ ADD IT HERE (right after app creation or near other routes)
-@app.get("/")
-def home():
-    return {"status": "API is running"}
-# new ends
+
 @app.post("/query")
 def query(req: QueryRequest):
     start_time = time.time()
@@ -298,8 +292,6 @@ def query(req: QueryRequest):
     context = "\n\n".join(doc.page_content for doc in retrieved_docs)
 
     print(f"[RETRIEVED] {len(retrieved_docs)} chunks", flush=True)
-    for i, doc in enumerate(retrieved_docs):
-        print(f"  chunk[{i}] start={doc.metadata.get('start',0):.0f}s | {doc.page_content[:120]}", flush=True)
 
     chain = prompt | llm | parser
     answer = chain.invoke({
@@ -341,12 +333,11 @@ def query(req: QueryRequest):
         "debug_rewritten_query": llm_question
     }
 
-# new starts 
+
 @app.get("/evaluations")
 def get_evaluations():
     db = EvalSession()
     data = db.query(Evaluation).all()
-
     result = []
     for row in data:
         result.append({
@@ -357,10 +348,9 @@ def get_evaluations():
             "answer_relevancy": row.answer_relevancy,
             "latency": row.latency
         })
-
     db.close()
     return result
-# new ends
+
 
 @app.get("/summary/{video_id}")
 def summarize(video_id: str):
@@ -382,7 +372,6 @@ def summarize(video_id: str):
 
 @app.delete("/session/{session_id}")
 def clear_session(session_id: str):
-    """Clear chat history for a session — use this instead of reloading the DB when testing new prompts."""
     db = SessionLocal()
     deleted = db.query(ChatMessage).filter(
         ChatMessage.session_id == session_id
