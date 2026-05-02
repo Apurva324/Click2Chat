@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
@@ -35,9 +36,9 @@ EvalBase.metadata.create_all(bind=eval_engine)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.youtube.com", "https://youtube.com", "chrome-extension://*"],
+    allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
