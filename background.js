@@ -21,7 +21,9 @@ async function fetchTranscript(videoId) {
 
   if (!track?.baseUrl) throw new Error("No usable caption track");
 
-  const xmlRes = await fetch(track.baseUrl);
+  const cleanUrl = track.baseUrl.replace(/\\u0026/g, "&");
+  const xmlRes = await fetch(cleanUrl);
+  console.log("[RAG] Fetching URL:", cleanUrl.substring(0, 100));
   const xmlText = await xmlRes.text();
 
   console.log("[RAG] XML length:", xmlText.length);
