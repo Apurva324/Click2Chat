@@ -37,9 +37,13 @@ EvalBase.metadata.create_all(bind=eval_engine)
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
     if request.method == "OPTIONS":
-        response = JSONResponse(content={}, status_code=200)
-    else:
-        response = await call_next(request)
+        response = JSONResponse(content="OK", status_code=200)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Max-Age"] = "86400"
+        return response
+    response = await call_next(request)
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "*"
