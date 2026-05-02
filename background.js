@@ -11,6 +11,10 @@ async function fetchTranscript(videoId) {
   const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
   const pageHtml = await pageRes.text();
 
+  console.log("[RAG] Page HTML length:", pageHtml.length);
+  console.log("[RAG] Has captionTracks:", pageHtml.includes("captionTracks"));
+  console.log("[RAG] Has ytInitialPlayerResponse:", pageHtml.includes("ytInitialPlayerResponse"));
+
   const match = pageHtml.match(/"captionTracks":(\[.*?\])/);
   if (!match) throw new Error("No caption tracks found");
 
