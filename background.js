@@ -22,28 +22,29 @@ async function fetchTranscript(videoId) {
   if (!track?.baseUrl) throw new Error("No usable caption track");
 
   const cleanUrl = track.baseUrl.replace(/\\u0026/g, "&");
-  const xmlRes = await fetch(cleanUrl);
-  console.log("[RAG] Fetching URL:", cleanUrl.substring(0, 100));
+  const jsonUrl = cleanUrl + "&fmt=json3";
+
+  const xmlRes = await fetch(jsonUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+  });
+
   const xmlText = await xmlRes.text();
+  console.log("[RAG] Status:", xmlRes.status);
+  console.log("[RAG] Response length:", xmlText.length);
+  console.log("[RAG] Sample:", xmlText.substring(0, 200));
 
-  console.log("[RAG] XML length:", xmlText.length);
-  console.log("[RAG] XML sample:", xmlText.substring(0, 200));
-
-  const entries = [];
-  const regex = /<text start="([^"]*)"[^>]*>([^<]*)<\/text>/g;
-  let m;
-  while ((m = regex.exec(xmlText)) !== null) {
-    entries.push({
-      start: parseFloat(m[1]),
-      text: m[2]
-        .replace(/&#39;/g, "'").replace(/&amp;/g, "&")
-        .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    });
-  }
+  const data = JSON.parse(xmlText);
+  const entries = data.events
+    .filter(e => e.segs)
+    .map(e => ({
+      start: e.tStartMs / 1000,
+      text: e.segs.map(s => s.utf8).join("").replace(/\n/g, " ").trim()
+    }))
+    .filter(e => e.text && e.text !== " ");
 
   console.log("[RAG] Entries parsed:", entries.length);
-
-  if (entries.length === 0) throw new Error("XML parsed but 0 entries found");
-
+  if (entries.length === 0) throw new Error("JSON3 parsed but 0 entries");
   return entries;
 }
