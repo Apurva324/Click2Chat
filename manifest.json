@@ -6,7 +6,7 @@
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "https://www.youtube.com/*",
-    "http://127.0.0.1:8000/*"
+    "https://click2chat-production.up.railway.app/*"
   ],
   "content_scripts": [
     {
