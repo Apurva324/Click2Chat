@@ -1,6 +1,5 @@
 let currentVideoId = null;
 
-
 function getSessionId() {
   let id = localStorage.getItem("rag_session_id");
   if (!id) {
@@ -23,21 +22,110 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-
+// Fetch transcript directly from content.js (has YouTube cookie access)
 async function fetchTranscript(videoId) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { type: "FETCH_TRANSCRIPT", videoId },
-      (response) => {
-        if (response?.success) {
-          resolve(response.transcript);
-        } else {
-          console.error("[RAG] Background transcript fetch failed:", response?.error);
-          resolve(null);
+  // Step 1: Get captionTracks from page HTML (already loaded, no extra request needed)
+  const pageHtml = document.documentElement.innerHTML;
+  const match = pageHtml.match(/"captionTracks":(\[.*?\])/);
+
+  if (match) {
+    try {
+      const tracks = JSON.parse(match[1]);
+      const track = tracks.find(t => t.languageCode === "en") ||
+                    tracks.find(t => t.languageCode?.startsWith("en")) ||
+                    tracks[0];
+
+      if (track?.baseUrl) {
+        console.log("[RAG] Found captionTracks in page HTML, fetching...");
+        const result = await fetchCaptionUrl(track.baseUrl);
+        if (result && result.length > 0) return result;
+      }
+    } catch (e) {
+      console.warn("[RAG] captionTracks parse failed:", e.message);
+    }
+  }
+
+  // Step 2: Fall back to fetching the page fresh (content.js has cookies)
+  console.log("[RAG] Fetching page HTML for captionTracks...");
+  try {
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      credentials: "include"
+    });
+    const freshHtml = await pageRes.text();
+    const freshMatch = freshHtml.match(/"captionTracks":(\[.*?\])/);
+
+    if (!freshMatch) throw new Error("No captionTracks in page HTML");
+
+    const tracks = JSON.parse(freshMatch[1]);
+    const track = tracks.find(t => t.languageCode === "en") ||
+                  tracks.find(t => t.languageCode?.startsWith("en")) ||
+                  tracks[0];
+
+    if (!track?.baseUrl) throw new Error("No usable caption track found");
+
+    const result = await fetchCaptionUrl(track.baseUrl);
+    if (result && result.length > 0) return result;
+
+  } catch (e) {
+    console.error("[RAG] Page fetch failed:", e.message);
+  }
+
+  throw new Error("No transcript found — this video may not have English captions");
+}
+
+async function fetchCaptionUrl(baseUrl) {
+  // Try json3 first, then XML
+  const urls = [
+    baseUrl + "&fmt=json3",
+    baseUrl,
+  ];
+
+  for (const url of urls) {
+    try {
+      console.log("[RAG] Trying caption URL:", url.substring(0, 80) + "...");
+      const res = await fetch(url, { credentials: "include" });
+      const text = await res.text();
+      console.log("[RAG] Response length:", text.length, "| Sample:", text.substring(0, 150));
+
+      if (!text || text.trim().length === 0) continue;
+
+      if (url.includes("fmt=json3")) {
+        const data = JSON.parse(text);
+        if (!data.events) continue;
+
+        const entries = data.events
+          .filter(e => e.segs)
+          .map(e => ({
+            start: e.tStartMs / 1000,
+            text: e.segs.map(s => s.utf8).join("").replace(/\n/g, " ").trim()
+          }))
+          .filter(e => e.text && e.text !== " ");
+
+        if (entries.length > 0) {
+          console.log("[RAG] Success with json3! Entries:", entries.length);
+          return entries;
+        }
+      } else {
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, "text/xml");
+        const entries = [...xml.querySelectorAll("text")].map(node => ({
+          start: parseFloat(node.getAttribute("start")),
+          text: node.textContent
+            .replace(/&amp;/g, "&").replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'").replace(/\n/g, " ").trim()
+        })).filter(e => e.text);
+
+        if (entries.length > 0) {
+          console.log("[RAG] Success with XML! Entries:", entries.length);
+          return entries;
         }
       }
-    );
-  });
+    } catch (e) {
+      console.warn("[RAG] Failed for URL:", e.message);
+    }
+  }
+  return null;
 }
 
 function buildSidebar() {
@@ -78,10 +166,17 @@ async function ingestVideo(videoId) {
   const status = document.getElementById("rag-status");
   status.textContent = "Fetching transcript...";
 
-  
-  const transcript = await fetchTranscript(videoId);
+  let transcript;
+  try {
+    transcript = await fetchTranscript(videoId);
+  } catch (e) {
+    console.error("[RAG] Transcript fetch error:", e.message);
+    status.textContent = "⚠️ No English captions found for this video. Try another!";
+    return;
+  }
+
   if (!transcript || transcript.length === 0) {
-    status.textContent = "No transcript available for this video.";
+    status.textContent = "⚠️ No English captions found for this video. Try another!";
     return;
   }
 
@@ -187,6 +282,6 @@ const videoId = getVideoId();
 if (videoId) {
   currentVideoId = videoId;
   buildSidebar();
-  ingestVideo(videoId);
+  ingestVideo(currentVideoId);
   watchForVideoChange();
 }
